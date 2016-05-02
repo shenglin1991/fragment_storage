@@ -26,6 +26,7 @@ def mongo_conn(conf=None):
     if user and pwd:
         mongo[mongo_db_name(conf)].authenticate(user, password=pwd)
 
+    print 'connecting to mongo'
     return mongo[mongo_db_name(conf)]
 
 
