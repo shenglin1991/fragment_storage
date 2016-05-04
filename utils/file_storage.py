@@ -9,16 +9,16 @@ class LocalFS:
     def __init__(self, pathname=None):
         self.path = pathname if pathname else './'
 
-    def write(self, conn, content, filename='default', mode='wb'):
+    def write(self, conn, content, placement='default', mode='wb'):
         if isinstance(content, dict):
             content = json.dumps(content)
 
-        with open(self.path + filename, mode) as fp:
+        with open(self.path + placement, mode) as fp:
             fp.write(content)
-        return self.path + filename
+        return self.path + placement
 
-    def read(self, filename='default', mode='rb'):
-        with open(self.path + filename, mode) as fp:
+    def read(self, placement='default', mode='rb'):
+        with open(self.path + placement, mode) as fp:
             return fp.read()
 
     def __str__(self):

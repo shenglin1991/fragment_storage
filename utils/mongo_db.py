@@ -30,5 +30,5 @@ def mongo_conn(conf=None):
     return mongo[mongo_db_name(conf)]
 
 
-def mongo_writer(db, content):
-    return db.fragment_store.insert_one(content).inserted_id
+def mongo_writer(db, content, placement='fragment_store'):
+    return db[placement].insert_one(content).inserted_id

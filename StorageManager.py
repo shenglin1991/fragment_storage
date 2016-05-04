@@ -74,18 +74,13 @@ class StorageManager(object):
 
         return set_handler(storage_set, storage_name, io_type, handler)
 
-    def write(self, storage_name, content, storage_type='db'):
+    def write(self, storage_name, content, storage_type='db', placement=None):
         # TODO: read file storage and write to destination
         conn, handler = self.get_io(storage_name, storage_type, 'write')
         if not handler:
             raise NotImplementedError("I/O handlers for storage not defined!")
-        """
 
-        if storage_type == 'fs':
-            filename = extract_name(content.get('Content-Type'))
-            return handler(content, filename=filename)
-        """
-        return handler(conn, content)
+        return handler(conn, content, placement) if placement else handler(conn, content)
 
     """
     def read(self, name, condition, storage_type='db'):

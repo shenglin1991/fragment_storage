@@ -45,7 +45,7 @@ def store(msg, db, librarian):
             raise ValueError("No storage available!")
 
         # store 'content' into 'storage', keep address of stored object
-        address = librarian.write(storage.get('name'), content, storage.get('type'))
+        address = librarian.write(storage.get('name'), content, storage.get('type'), placement=field)
 
         # generate a new object with all fields and the storage
         new_obj.update({field: {'storage': storage.get('name'),
