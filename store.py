@@ -12,6 +12,22 @@ from utils.mongo_db import mongo_conn, mongo_writer
 from StorageManager import StorageManager
 
 
+def store_process(db, field, field_type, librarian, content):
+    # look for {field: storage} mapping storage set by user.
+    # if {field: storage} mapping not found, try to find {type: storage} mapping set by default.
+    # if {type: storage} mapping not found, try default database.
+    storage = ((db.field_storage_mapping.find_one({'field': field}) or {}).get('storage') or
+               (db.type_storage_mapping.find_one({'type': field_type}) or {}).get('storage') or
+               librarian.get_default_storage('db'))
+    if not storage:
+        raise ValueError("No storage available!")
+
+    # store 'content' into 'storage', keep address of stored object
+    address = librarian.write(storage['name'], content, storage['type'], placement=field)
+    return {'storage': storage['name'],
+            'address': address}
+
+
 def store(msg, db, librarian):
     table = msg['collection']
     filtre = msg['filtre']
@@ -28,31 +44,31 @@ def store(msg, db, librarian):
     if not obj_to_store:
         raise ValueError("Object not found, check the condition or maybe it's already been proceeded")
 
-    print 'store fields'
     for field in obj_to_store:
         # get target content
         content = obj_to_store.get(field)
         if not content:
             raise NameError("Object information not completed!")
 
-        # look for {field: storage} mapping storage set by user.
-        # if {field: storage} mapping not found, try to find {type: storage} mapping set by default.
-        # if {type: storage} mapping not found, try default database.
-        storage = ((db.field_storage_mapping.find_one({'field': field}) or {}).get('storage') or
-                   (db.type_storage_mapping.find_one({'type': obj_to_store[field].get('type')}) or {}).get('storage') or
-                   librarian.get_default_storage('db'))
-        if not storage:
-            raise ValueError("No storage available!")
+        if isinstance(content['value'], dict):
+            value = {}
+            # store each sub part of content value
+            for part in content['value']:
+                storage_result = store_process(db, part,
+                                               type(content['value'][part]).__name__,
+                                               librarian,
+                                               content['value'][part])
+                value.update({part: storage_result})
+            # store field as dictionary multipart entry
+            storage_result = store_process(db, field, dict.__name__, librarian, {field: value})
 
-        # store 'content' into 'storage', keep address of stored object
-        address = librarian.write(storage.get('name'), content, storage.get('type'), placement=field)
+        else:
+            storage_result = store_process(db, field, obj_to_store[field]['type'], librarian, content)
 
         # generate a new object with all fields and the storage
-        new_obj.update({field: {'storage': storage.get('name'),
-                                'address': address}})
+        new_obj.update({field: storage_result})
 
-    print 'replace original object by scheme-address mapping form'
-    db[table].find_one_and_replace(filtre, new_obj)
+    db['new_' + table].insert_one(new_obj)
 
 
 def run(db, redis, storage_manager):
