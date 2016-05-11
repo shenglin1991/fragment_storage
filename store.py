@@ -12,63 +12,71 @@ from utils.mongo_db import mongo_conn, mongo_writer
 from StorageManager import StorageManager
 
 
-def store_process(db, field, field_type, librarian, content):
-    # look for {field: storage} mapping storage set by user.
-    # if {field: storage} mapping not found, try to find {type: storage} mapping set by default.
-    # if {type: storage} mapping not found, try default database.
-    storage = ((db.field_storage_mapping.find_one({'field': field}) or {}).get('storage') or
-               (db.type_storage_mapping.find_one({'type': field_type}) or {}).get('storage') or
-               librarian.get_default_storage('db'))
+def store_field(db, field_name, field_content, storage_manager):
+    if isinstance(field_content.get('value'), dict):
+        # deal with multiple part by storing them and keeping only their address
+        field_content_value = {}  # 'value' field of field_content after recursive storage
+        # store each sub part of content value
+        for part in field_content['value']:
+            part_storage_result = store_field(db, part, field_content['value'][part], storage_manager)
+            field_content_value.update({part: part_storage_result})
+        # update 'value' as collection of stored parts' address; 'type' as dictionary type
+        field_content.update({'value': field_content_value,
+                              'type': dict.__name__})
+    """
+    first look for {field: storage} mapping storage set by user.
+    if {field: storage} mapping not found, try to find {type: storage} mapping set by default.
+    if {type: storage} mapping not found, use default database.
+    """
+    storage = ((db.field_to_storage.find_one({'field': field_name}) or {}).get('storage') or
+               (db.type_to_storage.find_one({'type': field_content.get('type')}) or {}).get('storage') or
+               storage_manager.get_default_storage('db'))
     if not storage:
         raise ValueError("No storage available!")
 
     # store 'content' into 'storage', keep address of stored object
-    address = librarian.write(storage['name'], content, storage['type'], placement=field)
+    address = storage_manager.write(storage['name'], field_content, storage['type'], placement=field_name)
     return {'storage': storage['name'],
             'address': address}
 
 
-def store(msg, db, librarian):
-    table = msg['collection']
-    filtre = msg['filtre']
+def store_object(db, original_object, target_table, storage_manager):
+    """
+    storage of object in db
+    """
+    target_object = {}
+    for field in original_object:
+        # get target content
+        field_content = original_object.get(field)
+        if not field_content:
+            raise NameError("Object information not completed!")
+
+        location = store_field(db, field, field_content, storage_manager)
+        target_object.update({field: location})
+
+    return db[target_table].insert_one(target_object).inserted_id
+
+
+def write_handler(msg, db, storage_manager):
+    table = msg.get('collection')
+    filtre = msg.get('filtre', {})
+
+    if not table:
+        raise ValueError('Table to request not indicated!')
+
+    target_table = msg.get('target_collection', 'new_' + table)
 
     # generate bson format of ObjectId from str type
     _id = filtre.get('_id')
     if _id:
         filtre.update({'_id': ObjectId(_id)})
 
-    print 'look for object to store in database'
-    obj_to_store = db[table].find_one(filtre, {'_id': 0})
-    new_obj = {}
-
-    if not obj_to_store:
+    print 'looking for object to store in database'
+    original = db[table].find_one(filtre, {'_id': 0})
+    if not original:
         raise ValueError("Object not found, check the condition or maybe it's already been proceeded")
 
-    for field in obj_to_store:
-        # get target content
-        content = obj_to_store.get(field)
-        if not content:
-            raise NameError("Object information not completed!")
-
-        if isinstance(content['value'], dict):
-            value = {}
-            # store each sub part of content value
-            for part in content['value']:
-                storage_result = store_process(db, part,
-                                               type(content['value'][part]).__name__,
-                                               librarian,
-                                               content['value'][part])
-                value.update({part: storage_result})
-            # store field as dictionary multipart entry
-            storage_result = store_process(db, field, dict.__name__, librarian, {field: value})
-
-        else:
-            storage_result = store_process(db, field, obj_to_store[field]['type'], librarian, content)
-
-        # generate a new object with all fields and the storage
-        new_obj.update({field: storage_result})
-
-    db['new_' + table].insert_one(new_obj)
+    return store_object(db, original, target_table, storage_manager)
 
 
 def run(db, redis, storage_manager):
@@ -78,8 +86,8 @@ def run(db, redis, storage_manager):
 
     for msg in subscription.listen():
         if msg['channel'] == 'write':
-            print 'write channel: {}'.format(msg)
-            store(json.loads(msg['data']), db, storage_manager)
+            print "receive from 'write' channel: {}".format(msg)
+            write_handler(json.loads(msg['data']), db, storage_manager)
         print 'message proceeded'
 
 
