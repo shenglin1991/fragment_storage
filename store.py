@@ -13,23 +13,21 @@ from StorageManager import StorageManager
 
 
 def store_field(db, field_name, field_content, storage_manager):
-    if isinstance(field_content.get('value'), dict):
+    if isinstance(field_content, dict) and isinstance(field_content.get('value', ''), list):
         # deal with multiple part by storing them and keeping only their address
-        field_content_value = {}  # 'value' field of field_content after recursive storage
-        # store each sub part of content value
-        for part in field_content['value']:
-            part_storage_result = store_field(db, part, field_content['value'][part], storage_manager)
-            field_content_value.update({part: part_storage_result})
+        field_content_value = [store_field(db, 'part', part, storage_manager) for part in field_content['value']]
+
         # update 'value' as collection of stored parts' address; 'type' as dictionary type
         field_content.update({'value': field_content_value,
-                              'type': dict.__name__})
+                              'type': list.__name__})
+
     """
     first look for {field: storage} mapping storage set by user.
     if {field: storage} mapping not found, try to find {type: storage} mapping set by default.
     if {type: storage} mapping not found, use default database.
     """
     storage = ((db.field_to_storage.find_one({'field': field_name}) or {}).get('storage') or
-               (db.type_to_storage.find_one({'type': field_content.get('type')}) or {}).get('storage') or
+               (db.type_to_storage.find_one({'type': type(field_content.get('value')).__name__}) or {}).get('storage') or
                storage_manager.get_default_storage('db'))
     if not storage:
         raise ValueError("No storage available!")
