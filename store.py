@@ -6,9 +6,9 @@ import json
 
 from bson.objectid import ObjectId
 
-from utils.message import redis_conn
-from utils.file_storage import file_storage
-from utils.mongo_db import mongo_conn, mongo_writer
+from message import redis_conn
+from file_storage import file_storage
+from mongo_db import mongo_conn, mongo_writer
 from StorageManager import StorageManager
 
 
