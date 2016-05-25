@@ -40,6 +40,7 @@ class StorageManager(object):
     def __init__(self):
         self._databases = []
         self._filesystems = []
+        self._default_storage = None
 
     def get_databases(self):
         return [{'name': db.get('name'),
@@ -106,5 +107,14 @@ class StorageManager(object):
         })
 
     def get_default_storage(self, storage_type='db'):
+        if not self._default_storage:
+            storage_set = self._databases if storage_type == 'db' else self._filesystems
+            self._default_storage = random.choice(storage_set)
+        return self._default_storage
+
+    def set_default_storage(self, storage_name, storage_type='db'):
         storage_set = self._databases if storage_type == 'db' else self._filesystems
-        return random.choice(storage_set)
+        for storage in storage_set:
+            if storage['name'] == storage_name:
+                self._default_storage = storage
+                return

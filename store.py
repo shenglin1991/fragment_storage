@@ -7,8 +7,6 @@ import json
 from bson.objectid import ObjectId
 
 from message import redis_conn
-from file_storage import file_storage
-from mongo_db import mongo_conn, mongo_writer
 from StorageManager import StorageManager
 
 
@@ -38,7 +36,7 @@ def store_field(db, field_name, field_content, storage_manager):
             'address': address}
 
 
-def store_object(db, original_object, target_table, storage_manager):
+def store_object(db, original_object, target_storage, target_table, storage_manager):
     """
     storage of object in db
     """
@@ -52,7 +50,8 @@ def store_object(db, original_object, target_table, storage_manager):
         location = store_field(db, field, field_content, storage_manager)
         target_object.update({field: location})
 
-    return db[target_table].insert_one(target_object).inserted_id
+    return (storage_manager.write(target_storage, target_object, placement=target_table) if target_storage != 'n/a'
+            else db[target_table].insert_one(target_object).inserted_id)
 
 
 def write_handler(msg, db, storage_manager):
@@ -63,6 +62,7 @@ def write_handler(msg, db, storage_manager):
         raise ValueError('Table to request not indicated!')
 
     target_table = msg.get('target_collection', 'new_' + table)
+    target_storage = msg.get('target_storage', 'n/a')
 
     # generate bson format of ObjectId from str type
     _id = filtre.get('_id')
@@ -74,7 +74,7 @@ def write_handler(msg, db, storage_manager):
     if not original:
         raise ValueError("Object not found, check the condition or maybe it's already been proceeded")
 
-    return store_object(db, original, target_table, storage_manager)
+    return store_object(db, original, target_storage, target_table, storage_manager)
 
 
 def run(db, redis, storage_manager):
@@ -90,12 +90,18 @@ def run(db, redis, storage_manager):
 
 
 if __name__ == '__main__':
-
+    from file_storage import file_storage
+    from mongo_db import mongo_conn, mongo_writer
     db_ = mongo_conn()
+    db2 = mongo_conn({
+        '__DB_ADDR__': 'localhost:27027',
+    })
     redis_ = redis_conn()
     fs_ = file_storage()
     storage_manager_ = StorageManager()
     storage_manager_.add_database(db_, 'mongo_db', db_type='noSQL/document', write_handler=mongo_writer)
+    storage_manager_.add_database(db2, 'mongo_db2', db_type='noSQL/document', write_handler=mongo_writer)
+    storage_manager_.set_default_storage('mongo_db2')
     storage_manager_.add_filesystem(fs_, 'local_fs', write_handler=fs_.write)
     run(db_, redis_, storage_manager_)
 
