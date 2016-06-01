@@ -38,22 +38,27 @@ class Store(object):
         self.storage_manager = storage_manager
         self.root_db = root_db
 
-    def store_field(self, db, field, content):
+    def store_field(self, root_db, field, content):
+        """
+        first look for {field: storage} mapping storage set by user.
+        if {field: storage} mapping not found, try to find {type: storage} mapping set by default.
+        if {type: storage} mapping not found, use default database.
+        :param root_db:
+        :param field:
+        :param content:
+        :return:
+        """
         if isinstance(content, dict) and isinstance(content.get('value', ''), list):
             # deal with multiple part by storing them and keeping only their address
-            value = [self.store_field(db, 'multipart', part) for part in content['value']]
+            value = [self.store_field(root_db, 'multipart', part) for part in content['value']]
 
             # update 'value' as collection of stored parts' address; 'type' as dictionary type
             content.update({'value': value,
                             'type': list.__name__})
 
-        """
-        first look for {field: storage} mapping storage set by user.
-        if {field: storage} mapping not found, try to find {type: storage} mapping set by default.
-        if {type: storage} mapping not found, use default database.
-        """
-        storage = ((db.field_to_storage.find_one({'field': field}) or {}).get('storage') or
-                   (db.type_to_storage.find_one({'type': type(content.get('value')).__name__}) or {})
+        # look for place to store the field
+        storage = ((root_db.field_to_storage.find_one({'field': field}) or {}).get('storage') or
+                   (root_db.type_to_storage.find_one({'type': type(content.get('value')).__name__}) or {})
                    .get('storage') or self.storage_manager.get_default_storage('db'))
         if not storage:
             raise ValueError("No storage available!")
@@ -84,13 +89,13 @@ class Store(object):
         :return: write result
         """
         # get information from message
-        table = msg.get('collection')
+        collection = msg.get('collection')
         filtre = msg.get('filtre', {})
 
-        if not table:
+        if not collection:
             raise ValueError('Table to request not indicated!')
 
-        target_table = msg.get('target_collection', 'new_' + table)
+        target_table = msg.get('target_collection', 'new_' + collection)
         target_storage = msg.get('target_storage', 'n/a')
 
         # generate bson format of ObjectId from str type
@@ -99,12 +104,26 @@ class Store(object):
             filtre.update({'_id': ObjectId(_id)})
 
         print 'looking for object to store in database'
-        original = self.root_db[table].find_one(filtre, {'_id': 0})
+        original = self.root_db[collection].find_one(filtre, {'_id': 0})
         if not original:
             raise ValueError("Object not found, check the condition or maybe it's already been proceeded")
 
         # store object found
         return self.store_object(original, target_storage, target_table)
+
+    def read_handler(self, msg):
+        storage = msg.get('storage')
+        collection = msg.get('collection')
+        filtre = msg.get('filtre', {})
+
+        if not storage or not collection or not filtre:
+            raise ValueError('Information not complete')
+
+        _id = filtre.get('_id')
+        if _id:
+            filtre.update({'_id': ObjectId(_id)})
+
+        return self.storage_manager.read(storage, collection, filtre)
 
     def run(self, redis):
         """

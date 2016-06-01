@@ -83,11 +83,6 @@ class StorageManager(object):
 
         return handler(conn, content, placement) if placement else handler(conn, content)
 
-    """
-    def read(self, name, condition, storage_type='db'):
-        store = self.get_io_handler(name, storage_type, 'read')
-    """
-
     def add_database(self, db_conn, name, db_type='SQL', write_handler=None):
         self._databases.append({
             'name': name,
@@ -118,3 +113,6 @@ class StorageManager(object):
             if storage['name'] == storage_name:
                 self._default_storage = storage
                 return
+
+    def read(self, storage, collection, filtre, storage_type='db'):
+        store = self.get_io_handler(storage, storage_type, 'read')
