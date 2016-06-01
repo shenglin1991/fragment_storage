@@ -132,12 +132,14 @@ class Store(object):
         """
         subscription = redis.pubsub(ignore_subscribe_messages=True)
         subscription.subscribe('read', 'write')
-        print "listening on channels"
+        print 'listening on channels'
 
         for msg in subscription.listen():
             if msg['channel'] == 'write':
-                print "receive from 'write' channel: {}".format(msg)
-                self.write_handler(json.loads(msg['data']))
+                print 'receive from "write" channel: {}'.format(msg)
+                print self.write_handler(json.loads(msg['data']))
+            elif msg['channel'] == 'read':
+                print 'receive from "read" channel: {}'.format(msg)
             print 'message proceeded'
 
 
