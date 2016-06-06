@@ -18,15 +18,19 @@ def get_test_storage_manager(root_db):
     :return: the testing storage manager with local filesystem and a mongoDB
     """
     from file_storage import file_storage
-    from mongo_db import mongo_conn, mongo_writer
+    from mongo_db import mongo_conn, mongo_writer, mongo_reader
 
     fs_ = file_storage()
     db2 = mongo_conn({
         '__DB_ADDR__': 'localhost:27027',
     })
     storage_manager = StorageManager()
-    storage_manager.add_database(root_db, 'mongo_db', db_type='noSQL/document', write_handler=mongo_writer)
-    storage_manager.add_database(db2, 'mongo_db2', db_type='noSQL/document', write_handler=mongo_writer)
+    storage_manager.add_database(root_db, 'mongo_db', db_type='noSQL/document',
+                                 write_handler=mongo_writer,
+                                 read_handler=mongo_reader)
+    storage_manager.add_database(db2, 'mongo_db2', db_type='noSQL/document',
+                                 write_handler=mongo_writer,
+                                 read_handler=mongo_reader)
     storage_manager.set_default_storage('mongo_db2')
     storage_manager.add_filesystem(fs_, 'local_fs', write_handler=fs_.write)
 
