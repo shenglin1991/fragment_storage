@@ -144,6 +144,7 @@ class Store(object):
                 print self.write_handler(json.loads(msg['data']))
             elif msg['channel'] == 'read':
                 print 'receive from "read" channel: {}'.format(msg)
+                self.read_handler(json.loads(msg['data']))
             print 'message proceeded'
 
 
