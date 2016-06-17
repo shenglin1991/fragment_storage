@@ -56,13 +56,13 @@ class Store(object):
             # deal with multiple part by storing them and keeping only their address
             value = [self.store_field(root_db, 'multipart', part) for part in content['value']]
 
-            # update 'value' as collection of stored parts' address; 'type' as dictionary type
+            # update 'value' as collection of stored parts' address; 'type' as list
             content.update({'value': value,
                             'type': list.__name__})
 
         # look for place to store the field
         storage = ((root_db.field_to_storage.find_one({'field': field}) or {}).get('storage') or
-                   (root_db.type_to_storage.find_one({'type': type(content.get('value')).__name__}) or {})
+                   (root_db.type_to_storage.find_one({'type': content.get('type')}) or {})
                    .get('storage') or self.storage_manager.get_default_storage('db'))
         if not storage:
             raise ValueError("No storage available!")
