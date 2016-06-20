@@ -37,6 +37,10 @@ def get_test_storage_manager(root_db):
     return storage_manager
 
 
+def is_multipart(content):
+    return isinstance(content, dict) and isinstance(content.get('value', ''), list)
+
+
 class Store(object):
     def __init__(self, storage_manager=None, root_db=None):
         self.storage_manager = storage_manager
@@ -52,7 +56,7 @@ class Store(object):
         :param content:
         :return:
         """
-        if isinstance(content, dict) and isinstance(content.get('value', ''), list):
+        if is_multipart(content):
             # deal with multiple part by storing them and keeping only their address
             value = [self.store_field(root_db, 'multipart', part) for part in content['value']]
 
