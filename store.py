@@ -145,7 +145,11 @@ class Store(object):
         for msg in subscription.listen():
             if msg['channel'] == 'write':
                 print 'receive from "write" channel: {}'.format(msg)
-                print self.write_handler(json.loads(msg['data']))
+                try:
+                    print self.write_handler(json.loads(msg['data']))
+                except:
+                    print 'fail to write into database'
+
             elif msg['channel'] == 'read':
                 print 'receive from "read" channel: {}'.format(msg)
                 self.read_handler(json.loads(msg['data']))
