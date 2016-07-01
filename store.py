@@ -119,7 +119,23 @@ class Store(object):
         # store object found
         return self.store_object(original, target_storage, target_table)
 
+    def read_multipart(self, part):
+        if isinstance(part, str) or isinstance(part, unicode):
+            part_info = part
+        elif isinstance(part, dict) and part.get('address'):
+            part_info = self.storage_manager.read(part.get('storage'),
+                                                  part.get('collection'),
+                                                  {'address': part.get('address')})
+            for subpart in part_info:
+                part_info.update({subpart: self.read_multipart(part_info.get(subpart))})
+        elif isinstance(part, list):
+            part_info = [self.read_multipart(subpart) for subpart in part]
+        else:
+            raise TypeError('TODO: handle with unrecognized type ' + type(part).__name__)
+        return part_info
+
     def read_handler(self, msg):
+        # TODO; deal with filtre on path like: {'_id': xxx, 'path': '/slide/slide1.xml'}
         storage = msg.get('storage')
         collection = msg.get('collection')
         filtre = msg.get('filtre', {})
@@ -131,7 +147,10 @@ class Store(object):
         if _id:
             filtre.update({'_id': ObjectId(_id)})
 
-        return self.storage_manager.read(storage, collection, filtre)
+        read_object = self.storage_manager.read(storage, collection, filtre)
+        for part in read_object:
+            read_object.update({part: self.read_multipart(read_object.get(part))})
+        return _id, read_object
 
     def run(self, redis):
         """
@@ -152,7 +171,11 @@ class Store(object):
 
             elif msg['channel'] == 'read':
                 print 'receive from "read" channel: {}'.format(msg)
-                self.read_handler(json.loads(msg['data']))
+                _id, result = self.read_handler(json.loads(msg['data']))
+                redis.publish('read_result', json.dumps({
+                    '_id': _id,
+                    'result': result
+                }))
             print 'message proceeded'
 
 
