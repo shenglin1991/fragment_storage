@@ -6,8 +6,8 @@ import json
 
 from bson.objectid import ObjectId
 
-from mongo_db import mongo_conn
-from message import redis_conn
+from storages.mongo_db import mongo_conn
+from storages.message import redis_conn
 from StorageManager import StorageManager
 
 
@@ -17,8 +17,8 @@ def get_test_storage_manager(root_db):
     :param root_db: indicate root database
     :return: the testing storage manager with local filesystem and a mongoDB
     """
-    from file_storage import file_storage
-    from mongo_db import mongo_conn, mongo_writer, mongo_reader
+    from storages.file_storage import file_storage
+    from storages.mongo_db import mongo_conn, mongo_writer, mongo_reader
 
     fs_ = file_storage()
     db2 = mongo_conn({
