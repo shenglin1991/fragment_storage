@@ -134,23 +134,50 @@ class Store(object):
             raise TypeError('TODO: handle with unrecognized type ' + type(part).__name__)
         return part_info
 
+    def read_subpart(self, part, projection):
+        if len(projection) == 1:
+            return self.read_multipart(part)
+        else:
+            chosen_part = None
+            for subpart in part:
+                if subpart.get('name') == projection[0]:
+                    chosen_part = subpart
+                    break
+            next_projection = projection[1].split('.', 1)
+            if not chosen_part:
+                raise ValueError('Invalid path')
+            return self.read_subpart(chosen_part, next_projection)
+
     def read_handler(self, msg):
         # TODO; deal with filtre on path like: {'_id': xxx, 'path': '/slide/slide1.xml'}
         storage = msg.get('storage')
         collection = msg.get('collection')
         filtre = msg.get('filtre', {})
+        projection = msg.get('projection')
 
         if not storage or not collection or not filtre:
             raise ValueError('Information not complete')
 
+        # transform _id from str type to ObjectId
         _id = filtre.get('_id')
         if _id:
             filtre.update({'_id': ObjectId(_id)})
 
+        # look up for object from storage
         read_object = self.storage_manager.read(storage, collection, filtre)
-        for part in read_object:
-            read_object.update({part: self.read_multipart(read_object.get(part))})
-        return _id, read_object
+
+        if projection is None:
+            # If no demand for projection, get object with its entire content
+            for part in read_object:
+                read_object.update({part: self.read_multipart(read_object.get(part))})
+            return _id, read_object
+        else:
+            projected_object = {}
+            # If there exists projection, look up for only needed part
+            for key in projection:
+                projection.update({key: projection.get(key).split('.', 1)})
+                projected_object.update({key: self.read_subpart(read_object.get(key), projection.get(key))})
+            return _id, projected_object
 
     def run(self, redis):
         """
