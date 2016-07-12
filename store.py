@@ -58,7 +58,7 @@ class Store(object):
         """
         if is_multipart(content):
             # deal with multiple part by storing them and keeping only their address
-            value = [self.store_field(root_db, 'multipart', part) for part in content['value']]
+            value = [self.store_field(root_db, content.get('name', 'multipart'), part) for part in content['value']]
 
             # update 'value' as collection of stored parts' address; 'type' as list
             content.update({'value': value,
@@ -72,9 +72,14 @@ class Store(object):
             raise ValueError("No storage available!")
 
         # store 'content' into 'storage', keep address of stored object
-        address = self.storage_manager.write(storage['name'], content, storage['type'], placement=field)
+        # TODO : make placement more reasonable
+        placement = content.get('name', field)
+        address = self.storage_manager.write(storage['name'],
+                                             content,
+                                             storage['type'],
+                                             placement=placement)
         return {'storage': storage['name'],
-                'collection': field,
+                'collection': placement,
                 'address': address}
 
     def store_object(self, original_object, target_storage, target_table):
@@ -135,18 +140,40 @@ class Store(object):
         return part_info
 
     def read_subpart(self, part, projection):
+        # TODO : projection conflit of using '.'
+        print 'projection', projection.replace('.', '\u002E')
+
+        if isinstance(part.get('value'), list):
+            print
+            for subpart in part.get('value'):
+                print 'subpart', subpart
+                if subpart.get('collection', '').replace('.', '\u002E') == projection:
+                    return self.read_multipart(subpart)
+
+        projection = projection.split('.', 1)
+
         if len(projection) == 1:
             return self.read_multipart(part)
         else:
-            chosen_part = None
-            for subpart in part:
-                if subpart.get('name') == projection[0]:
-                    chosen_part = subpart
-                    break
-            next_projection = projection[1].split('.', 1)
-            if not chosen_part:
+            actual_part = None
+
+            if isinstance(part, dict):
+                actual_part = part
+            elif isinstance(part, list):
+                for subpart in part:
+                    if subpart.get('collection') == projection[0]:
+                        actual_part = subpart
+                        break
+            else:
+                raise TypeError('deal with other types of parts')
+
+            next_part = self.storage_manager.read(actual_part.get('storage'),
+                                                  actual_part.get('collection'),
+                                                  {'address': actual_part.get('address')})
+            if not next_part:
                 raise ValueError('Invalid path')
-            return self.read_subpart(chosen_part, next_projection)
+            next_projection = projection[1]
+            return self.read_subpart(next_part, next_projection)
 
     def read_handler(self, msg):
         # TODO; deal with filtre on path like: {'_id': xxx, 'path': '/slide/slide1.xml'}
@@ -174,9 +201,8 @@ class Store(object):
         else:
             projected_object = {}
             # If there exists projection, look up for only needed part
-            for key in projection:
-                projection.update({key: projection.get(key).split('.', 1)})
-                projected_object.update({key: self.read_subpart(read_object.get(key), projection.get(key))})
+            for key in projection.split(','):
+                projected_object.update({key: self.read_subpart(read_object.get(key.split('.')[0]), key)})
             return _id, projected_object
 
     def run(self, redis):
