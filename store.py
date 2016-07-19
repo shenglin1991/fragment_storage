@@ -20,11 +20,14 @@ def get_test_storage_manager(root_db):
     from storages.file_storage import file_storage
     from storages.mongo_db import mongo_conn, mongo_writer, mongo_reader
 
-    fs_ = file_storage()
+    fs_hot = file_storage({'name': '/mnt/hotsemantic/'})
+    fs_warm = file_storage({'name': '/mnt/warmsemantic/'})
+    fs_cold = file_storage({'name': '/mnt/coldsemantic/'})
     db2 = mongo_conn({
         '__DB_ADDR__': 'localhost:27027',
     })
     storage_manager = StorageManager()
+
     storage_manager.add_database(root_db, 'mongo_db', db_type='noSQL/document',
                                  write_handler=mongo_writer,
                                  read_handler=mongo_reader)
@@ -32,7 +35,15 @@ def get_test_storage_manager(root_db):
                                  write_handler=mongo_writer,
                                  read_handler=mongo_reader)
     storage_manager.set_default_storage('mongo_db2')
-    storage_manager.add_filesystem(fs_, 'local_fs', write_handler=fs_.write)
+    storage_manager.add_filesystem(fs_hot, 'ceph_hot',
+                                   write_handler=fs_hot.write,
+                                   read_handler=fs_hot.read)
+    storage_manager.add_filesystem(fs_warm, 'ceph_warm',
+                                   write_handler=fs_warm.write,
+                                   read_handler=fs_warm.read)
+    storage_manager.add_filesystem(fs_cold, 'ceph_cold',
+                                   write_handler=fs_cold.write,
+                                   read_handler=fs_cold.read)
 
     return storage_manager
 
@@ -140,43 +151,43 @@ class Store(object):
         return part_info
 
     def read_subpart(self, part, projection):
-        # TODO : projection conflit of using '.'
-        print 'projection', projection.replace('.', '\u002E')
-
-        if isinstance(part.get('value'), list):
-            print
-            for subpart in part.get('value'):
-                print 'subpart', subpart
-                if subpart.get('collection', '').replace('.', '\u002E') == projection:
-                    return self.read_multipart(subpart)
-
+        print 'READ INFO: split projection'
         projection = projection.split('.', 1)
 
-        if len(projection) == 1:
-            return self.read_multipart(part)
+        actual_part = None
+
+        if isinstance(part, dict):
+            print 'READ INFO: actual part is one instance'
+            actual_part = part
+
+        elif isinstance(part, list):
+            print 'READ INFO: actual part is a list of instances'
+            for subpart in part:
+                if subpart.get('collection') == projection[0]:
+                    actual_part = subpart
+                    break
+
         else:
-            actual_part = None
+            raise TypeError('deal with other types of parts')
 
-            if isinstance(part, dict):
-                actual_part = part
-            elif isinstance(part, list):
-                for subpart in part:
-                    if subpart.get('collection') == projection[0]:
-                        actual_part = subpart
-                        break
-            else:
-                raise TypeError('deal with other types of parts')
+        print 'READ INFO: read next part'
+        next_part = self.storage_manager.read(actual_part.get('storage'),
+                                              actual_part.get('collection'),
+                                              {'address': actual_part.get('address')})
+        if not next_part:
+            raise ValueError('Invalid path')
 
-            next_part = self.storage_manager.read(actual_part.get('storage'),
-                                                  actual_part.get('collection'),
-                                                  {'address': actual_part.get('address')})
-            if not next_part:
-                raise ValueError('Invalid path')
+        if next_part.get('value'):
+            next_part = next_part.get('value')
+
+        if len(projection) == 1:
+            return self.read_multipart(next_part)
+
+        else:
             next_projection = projection[1]
             return self.read_subpart(next_part, next_projection)
 
     def read_handler(self, msg):
-        # TODO; deal with filtre on path like: {'_id': xxx, 'path': '/slide/slide1.xml'}
         storage = msg.get('storage')
         collection = msg.get('collection')
         filtre = msg.get('filtre', {})
@@ -191,6 +202,7 @@ class Store(object):
             filtre.update({'_id': ObjectId(_id)})
 
         # look up for object from storage
+        print 'READ INFO: get root object from storage'
         read_object = self.storage_manager.read(storage, collection, filtre)
 
         if projection is None:
@@ -202,7 +214,9 @@ class Store(object):
             projected_object = {}
             # If there exists projection, look up for only needed part
             for key in projection.split(','):
-                projected_object.update({key: self.read_subpart(read_object.get(key.split('.')[0]), key)})
+                projected_object.update({key: {
+                    'value': self.read_subpart(read_object.get(key.split('.')[0]), key)
+                }})
             return _id, projected_object
 
     def run(self, redis):
