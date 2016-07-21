@@ -57,7 +57,7 @@ class Store(object):
         self.storage_manager = storage_manager
         self.root_db = root_db
 
-    def store_field(self, root_db, field, content):
+    def write_field(self, root_db, field, content):
         """
         first look for {field: storage} mapping storage set by user.
         if {field: storage} mapping not found, try to find {type: storage} mapping set by default.
@@ -69,7 +69,7 @@ class Store(object):
         """
         if is_multipart(content):
             # deal with multiple part by storing them and keeping only their address
-            value = [self.store_field(root_db, content.get('name', 'multipart'), part) for part in content['value']]
+            value = [self.write_field(root_db, content.get('name', 'multipart'), part) for part in content['value']]
 
             # update 'value' as collection of stored parts' address; 'type' as list
             content.update({'value': value,
@@ -93,13 +93,14 @@ class Store(object):
                 'collection': placement,
                 'address': address}
 
-    def store_object(self, original_object, target_storage, target_table):
+    def write_object(self, original_object, target_storage, target_table):
         """
         storage of object in db
         """
+        print 'INFO: Write original object into target storage, storing location information in target table'
         target_object = {}
         for key, value in original_object.iteritems():
-            location = self.store_field(self.root_db, key, value)
+            location = self.write_field(self.root_db, key, value)
             target_object.update({key: location})
 
         return (self.storage_manager.write(target_storage, target_object, placement=target_table)
@@ -112,28 +113,28 @@ class Store(object):
         :param msg: data part of message
         :return: write result
         """
-        # get information from message
-        collection = msg.get('collection')
+        # get metadata from message
+        original_table = msg.get('collection')
         filtre = msg.get('filtre', {})
 
-        if not collection:
+        if not original_table:
             raise ValueError('Table to request not indicated!')
 
-        target_table = msg.get('target_collection', 'new_' + collection)
+        target_table = msg.get('target_collection', 'new_' + original_table)
         target_storage = msg.get('target_storage', 'n/a')
 
-        # generate bson format of ObjectId from str type
+        # transform _id from str type to ObjectId
         _id = filtre.get('_id')
         if _id:
             filtre.update({'_id': ObjectId(_id)})
 
-        print 'looking for object to store in database'
-        original = self.root_db[collection].find_one(filtre, {'_id': 0})
-        if not original:
-            raise ValueError("Object not found, check the condition or maybe it's already been proceeded")
+        print 'INFO: looking for object to store in database'
+        original_object = self.root_db[original_table].find_one(filtre, {'_id': 0})
+        if not original_object:
+            raise ValueError("ERROR: Object not found, check the condition or maybe it's already been proceeded")
 
         # store object found
-        return self.store_object(original, target_storage, target_table)
+        return self.write_object(original_object, target_storage, target_table)
 
     def read_multipart(self, part):
         if isinstance(part, str) or isinstance(part, unicode):
@@ -188,6 +189,12 @@ class Store(object):
             return self.read_subpart(next_part, next_projection)
 
     def read_handler(self, msg):
+        """
+        Handle read operations
+        :param msg: read metadata
+        :return: read result and its original _id
+        """
+        # get metadata from message
         storage = msg.get('storage')
         collection = msg.get('collection')
         filtre = msg.get('filtre', {})
@@ -214,36 +221,36 @@ class Store(object):
             projected_object = {}
             # If there exists projection, look up for only needed part
             for key in projection.split(','):
-                projected_object.update({key: {
-                    'value': self.read_subpart(read_object.get(key.split('.')[0]), key)
-                }})
+                projected_object.update({key: self.read_subpart(read_object.get(key.split('.')[0]), key)})
             return _id, projected_object
 
-    def run(self, redis):
+    def run(self, broker):
         """
         Run redis message handler
-        :param redis:   message bus for all operations
+        :param broker:   message bus for all operations
         """
-        subscription = redis.pubsub(ignore_subscribe_messages=True)
+        print 'INFO: Running store manager'
+        subscription = broker.pubsub(ignore_subscribe_messages=True)
         subscription.subscribe('read', 'write')
-        print 'listening on channels'
 
         for msg in subscription.listen():
             if msg['channel'] == 'write':
-                print 'receive from "write" channel: {}'.format(msg)
+                print 'INFO: Receive from "write" channel: {}'.format(msg)
                 try:
                     print self.write_handler(json.loads(msg['data']))
                 except:
-                    print 'fail to write into database'
+                    print 'ERROR: Fail to write object'
 
             elif msg['channel'] == 'read':
-                print 'receive from "read" channel: {}'.format(msg)
+                print 'INFO: Receive from "read" channel: {}'.format(msg)
+                print 'INFO: Reading from cloud'
                 _id, result = self.read_handler(json.loads(msg['data']))
-                redis.publish('read_result', json.dumps({
+                print 'INFO: Returning read result'
+                broker.publish('read_result', json.dumps({
                     '_id': _id,
                     'result': result
                 }))
-            print 'message proceeded'
+            print 'INFO: Message proceeded'
 
 
 def main(storage_manager=None):
