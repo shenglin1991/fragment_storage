@@ -11,77 +11,66 @@ class StorageManager(object):
         self._default_storage = None
 
     def get_databases(self):
-        return [{'name': db.get('name'),
+        return [{'name': storage.get('name'),
                  'type': 'db'}
-                for db in self.storages
-                if db['type'] == 'db']
+                for storage in self.storages
+                if storage.get('type') == 'db']
 
     def get_filesystems(self):
-        return [{'name': fs.get('name'),
+        return [{'name': storage.get('name'),
                  'type': 'fs'}
-                for fs in self.storages
-                if fs['type'] == 'fs']
+                for storage in self.storages
+                if storage.get('type') == 'fs']
 
-    def get_storage_instance(self, storage_name, storage_type):
+    def get_storage_instance(self, storage_name):
         for storage in self.storages:
-            if storage_name == storage['name'] and storage_type == storage['type']:
+            if storage_name == storage.get('name'):
                 return storage
         return None
 
-    def get_storage_handler(self, storage_name, storage_type, io_type='write'):
-        storage = self.get_storage_instance(storage_name, storage_type)
+    def get_storage_handler(self, storage_name, io_type='write'):
+        storage = self.get_storage_instance(storage_name)
         if not storage:
             raise TypeError("Storage doesn't exist")
         return storage.get('connection'), storage.get(io_type)
 
-    def set_storage_handler(self, storage_name, handler, storage_type='db', io_type='write'):
+    def set_storage_handler(self, storage_name, handler, io_type='write'):
         for storage in self.storages:
-            if storage_name == storage['name'] and storage_type == storage['type']:
+            if storage_name == storage.get('name'):
                 storage.update({io_type: handler})
                 return True
         return False
 
-    def add_database(self, db_conn, name, db_type='SQL', write_handler=None, read_handler=None):
+    def add_storage(self, conn, name, storage_type='db', write_handler=None, read_handler=None):
         self.storages.append({
             'name': name,
-            'type': 'db',
-            'subtype': db_type,
-            'connection': db_conn,
+            'type': storage_type,
+            'connection': conn,
             'write': write_handler,
             'read': read_handler
         })
 
-    def add_filesystem(self, fs_conn, name, fs_type='NFS', write_handler=None, read_handler=None):
-        self.storages.append({
-            'name': name,
-            'type': 'fs',
-            'subtype': fs_type,
-            'connection': fs_conn,
-            'write': write_handler,
-            'read': read_handler
-        })
-
-    def get_default_storage(self, storage_type='db'):
+    def get_default_storage(self):
         if not self._default_storage:
-            self._default_storage = random.choice([storage for storage in self.storages
-                                                   if storage['type'] == storage_type])
+            self._default_storage = random.choice(self.storages)
         return self._default_storage
 
-    def set_default_storage(self, storage_name, storage_type=None):
+    def set_default_storage(self, storage_name):
         for storage in self.storages:
-            if storage['name'] == storage_name and (not storage_type or storage['type'] == storage_type):
+            if storage.get('name') == storage_name:
                 self._default_storage = storage
                 return
+        self._default_storage = self.get_default_storage()
 
-    def write(self, storage_name, content, storage_type='db', placement=None):
-        storage_conn, writer = self.get_storage_handler(storage_name, storage_type, 'write')
+    def write(self, storage_name, content, placement=None):
+        storage_conn, writer = self.get_storage_handler(storage_name, 'write')
         if not writer:
             raise NotImplementedError("Writer handler for storage not defined!")
 
         return writer(storage_conn, content, placement)
 
-    def read(self, storage_name, placement, filtre, storage_type='db'):
-        storage, reader = self.get_storage_handler(storage_name, storage_type, 'read')
+    def read(self, storage_name, placement, filtre):
+        storage, reader = self.get_storage_handler(storage_name, 'read')
         if not reader:
             raise NotImplementedError("Reader handler for storage not defined!")
         return reader(storage, placement, filtre)
