@@ -102,7 +102,6 @@ class Store(object):
         placement = content.get('name', field)
         address = self.storage_manager.write(storage['name'],
                                              content,
-                                             storage['type'],
                                              placement=placement)
         return {'storage': storage['name'],
                 'collection': placement,
@@ -158,6 +157,7 @@ class Store(object):
             part_info = self.storage_manager.read(part.get('storage'),
                                                   part.get('collection'),
                                                   {'address': part.get('address')})
+
             if not self.storage_manager.is_db(part.get('storage')):
                 part_info = json.loads(part_info)
 
@@ -165,8 +165,10 @@ class Store(object):
                 part_info.update({subpart: self.entire_read(part_info.get(subpart))})
         elif isinstance(part, list):
             part_info = [self.entire_read(subpart) for subpart in part]
+        elif isinstance(part, bool):
+            part_info = str(part)
         else:
-            raise TypeError('TODO: handle with unrecognized type ' + type(part).__name__)
+            raise TypeError('TODO: handle with unrecognized type: ' + type(part).__name__)
         return part_info
 
     def selective_read(self, part, projection):
@@ -263,7 +265,7 @@ class Store(object):
                 except ValueError as err:
                     print 'ERROR: ', err
                 except Exception as err:
-                    print 'ERROR: Fail to write object', err.__doc__
+                    print 'ERROR: Fail to write object, ', err.__doc__
 
             elif msg['channel'] == 'read':
                 print 'INFO: Receive from "read" channel: {}'.format(msg)
