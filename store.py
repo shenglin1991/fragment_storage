@@ -163,6 +163,8 @@ class Store(object):
 
             for subpart in part_info:
                 part_info.update({subpart: self.entire_read(part_info.get(subpart))})
+        elif isinstance(part, dict) and part.get('value'):
+            part_info = self.entire_read(part.get('value'))
         elif isinstance(part, list):
             part_info = [self.entire_read(subpart) for subpart in part]
         elif isinstance(part, bool):
